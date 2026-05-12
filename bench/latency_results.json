@@ -1,0 +1,24 @@
+{
+  "n_per_op": 2000,
+  "results": [
+    {
+      "label": "filesystem.list_directory",
+      "n": 2000,
+      "mean_us": 4020.36,
+      "p50_us": 3796.7,
+      "p95_us": 5807.7,
+      "p99_us": 8210.0,
+      "max_us": 14489.0
+    },
+    {
+      "label": "sqlite.query",
+      "n": 2000,
+      "mean_us": 4076.25,
+      "p50_us": 3782.9,
+      "p95_us": 6607.0,
+      "p99_us": 8694.9,
+      "max_us": 12551.3
+    }
+  ],
+  "p99_under_50ms": true
+}
