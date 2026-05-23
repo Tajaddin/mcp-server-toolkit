@@ -1,4 +1,14 @@
-"""MCP server: safe read-only SQLite queries."""
+"""MCP server: safe read-only SQLite queries.
+
+WARNING — demo-only. This server intentionally executes user-supplied SQL
+(read-only via _is_read_only) against the configured SQLite file. It is
+designed for showcase / sandbox SQLite databases (`examples/*.db`,
+`docs.db`, etc.). DO NOT point it at a database that contains production
+data, PII, or anything you would not be comfortable streaming back to an
+LLM in plain text. There is no row-level authorization, no PII redaction,
+no audit log of query bodies, and read-only protection is regex-based, not
+enforced by the SQLite engine.
+"""
 
 from __future__ import annotations
 
@@ -57,7 +67,17 @@ def build_server(db_path: Path, row_limit: int = 100) -> ToolkitServer:
         if not db_path.exists():
             raise ToolError(f"db file not found: {db_path}")
         with _connect() as conn:
-            rows = conn.execute(f"PRAGMA table_info({name})").fetchall()
+            # Look the name up in sqlite_master first so we are interpolating
+            # an identifier the engine has already confirmed exists, rather
+            # than the raw caller-supplied string.
+            exists = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                (name,),
+            ).fetchone()
+            if exists is None:
+                raise ToolError(f"unknown table: {name}")
+            verified_name = exists["name"]
+            rows = conn.execute(f"PRAGMA table_info({verified_name})").fetchall()
         if not rows:
             raise ToolError(f"unknown table: {name}")
         return "\n".join(
