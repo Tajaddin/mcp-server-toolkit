@@ -1,6 +1,6 @@
 # mcp-server-toolkit
 
-> Reusable framework for building **Model Context Protocol (MCP) servers** for Claude, plus three production-shaped example servers — filesystem-stats, github-issues, sqlite-query. In-memory test harness with **p99 tool round-trip = 8.2 ms** (target was 50 ms).
+> Reusable framework for building **Model Context Protocol (MCP) servers** for Claude, plus four production-shaped example servers: filesystem-stats, github-issues, sqlite-query, xquik-search. In-memory test harness with **p99 tool round-trip = 8.2 ms** (target was 50 ms).
 
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Tests](https://img.shields.io/badge/tests-12%20passing-brightgreen)](#tests) [![Python](https://img.shields.io/badge/python-3.10%2B-blue)]()
 
@@ -10,10 +10,11 @@ MCP is Anthropic's standard for letting LLMs call tools running on your machine.
 
 * A thin `ToolkitServer` wrapper with a tool description registry + uniform `ToolError` error-handling pattern
 * An in-memory test harness so your tools are unit-testable via a real `ClientSession` — **no subprocess, no JSON-over-stdio flakiness**
-* **Three example servers** ready to install:
-  * `mcp-filesystem-stats` — sandboxed `list_directory` / `file_summary` / `find_files`
-  * `mcp-github-issues` — read-only public GitHub issue search via REST
-  * `mcp-sqlite-query` — read-only SQLite with write-statement rejection
+* **Four example servers** ready to install:
+  * `mcp-filesystem-stats` - sandboxed `list_directory` / `file_summary` / `find_files`
+  * `mcp-github-issues` - read-only public GitHub issue search via REST
+  * `mcp-sqlite-query` - read-only SQLite with write-statement rejection
+  * `mcp-xquik-search` - X post, user, and trend research via Xquik
 
 ## Hero benchmark
 
@@ -85,7 +86,7 @@ Tool authors:
 * Raise `ToolError("...")` for user-visible failures (the SDK emits `isError: true`).
 * Let any other exception bubble — FastMCP turns it into a generic server error.
 
-## Three example servers
+## Four example servers
 
 ### `filesystem-stats`
 
@@ -117,6 +118,16 @@ Strict read-only SQLite. Only `SELECT` / `WITH ... SELECT` accepted; statement c
 | `describe_table` | `name` | columns + types + PK marker |
 | `query` | `sql` | TSV of up to 100 rows |
 
+### `xquik-search`
+
+Read X posts, users, and trends through Xquik's public REST API. Set `XQUIK_API_KEY` before calling tools.
+
+| Tool | Args | What it returns |
+|---|---|---|
+| `search_tweets` | `query`, `query_type`, `limit`, `cursor` | matching posts plus pagination cursor |
+| `search_users` | `query`, `cursor` | matching profiles plus pagination cursor |
+| `get_trends` | `woeid`, `count` | trending topics for a region |
+
 ## Tests
 
 ```bash
@@ -145,7 +156,7 @@ Each server has an in-memory test suite that exercises:
 │       ├── filesystem_stats.py
 │       ├── github_issues.py
 │       └── sqlite_query.py
-├── tests/                  # 12 pytest-asyncio cases
+├── tests/                  # pytest-asyncio cases
 └── bench/
     ├── latency.py
     └── latency_results.json
