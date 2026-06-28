@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mcp-server-toolkit"
 version = "0.1.0"
-description = "Reusable Model Context Protocol server framework + 3 example servers (filesystem-stats, github-issues, sqlite-query). In-memory test harness with sub-millisecond tool round-trip."
+description = "Reusable Model Context Protocol server framework + 4 example servers (filesystem-stats, github-issues, sqlite-query, xquik-search). In-memory test harness with sub-millisecond tool round-trip."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -32,6 +32,7 @@ dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.6"]
 mcp-filesystem-stats = "mcp_server_toolkit.servers.filesystem_stats:main"
 mcp-github-issues = "mcp_server_toolkit.servers.github_issues:main"
 mcp-sqlite-query = "mcp_server_toolkit.servers.sqlite_query:main"
+mcp-xquik-search = "mcp_server_toolkit.servers.xquik_search:main"
 
 [project.urls]
 Homepage = "https://github.com/Tajaddin/mcp-server-toolkit"
