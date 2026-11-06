@@ -2,7 +2,7 @@
 
 > Reusable framework for building **Model Context Protocol (MCP) servers** for Claude, plus three production-shaped example servers — filesystem-stats, github-issues, sqlite-query. In-memory test harness with **p99 tool round-trip = 8.2 ms** (target was 50 ms).
 
-[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Tests](https://img.shields.io/badge/tests-12%20passing-brightgreen)](#tests) [![Python](https://img.shields.io/badge/python-3.10%2B-blue)]()
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Tests](https://img.shields.io/badge/tests-73%20passing-brightgreen)](#tests) [![Python](https://img.shields.io/badge/python-3.10%2B-blue)]()
 
 ## What this is
 
@@ -126,13 +126,16 @@ pytest -q
 ```
 
 ```
-12 passed
+73 passed
 ```
 
 Each server has an in-memory test suite that exercises:
 * tool listing (advertised tools match the registry)
 * happy-path tool calls
 * error paths (path escape, invalid table name, write statement, missing file)
+* adversarial inputs: `..`, absolute and symlinked paths for every filesystem tool, a runaway query, unsafe GitHub `owner`/`repo` values
+
+The symlink cases skip on systems that do not allow creating symlinks (Windows without Developer Mode), leaving 68 passed, 5 skipped.
 
 ## Project layout
 
@@ -142,11 +145,12 @@ Each server has an in-memory test suite that exercises:
 │   ├── __init__.py
 │   ├── base.py             # ToolkitServer + ToolError + register_tool decorator
 │   ├── testing.py          # in_memory_session, list_tools, call_tool
+│   ├── sandbox.py          # Sandbox: path and glob confinement
 │   └── servers/
 │       ├── filesystem_stats.py
 │       ├── github_issues.py
 │       └── sqlite_query.py
-├── tests/                  # 12 pytest-asyncio cases
+├── tests/                  # 73 pytest cases
 └── bench/
     ├── latency.py
     └── latency_results.json
