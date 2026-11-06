@@ -110,7 +110,7 @@ Read-only public-repo issue search. Unauth GitHub allows 60 req/hr; set `GITHUB_
 
 ### `sqlite-query`
 
-Strict read-only SQLite. Only `SELECT` / `WITH ... SELECT` accepted; statement chaining via `;` is rejected. Connection opens in `mode=ro` so even a regex bypass can't write.
+Strict read-only SQLite. Only `SELECT` / `WITH ... SELECT` accepted; statement chaining via `;` is rejected. Connection opens in `mode=ro` so even a regex bypass can't write. A query still running after 5 s (`query_timeout_s`) is interrupted through SQLite's progress handler, so a runaway recursive CTE cannot hang the server.
 
 | Tool | Args | What it returns |
 |---|---|---|
