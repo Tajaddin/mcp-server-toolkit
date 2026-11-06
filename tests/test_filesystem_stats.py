@@ -143,3 +143,11 @@ async def test_find_files_skips_matches_behind_symlinks_out_of_the_root(jail, pa
     _link_or_skip(root / "link", outside)
     _, text = await _call(root, "find_files", pattern=pattern)
     assert "secret.txt" not in text
+
+
+async def test_find_files_skips_a_symlink_loop(jail) -> None:
+    root, _ = jail
+    _link_or_skip(root / "loop", root / "loop")
+    is_error, text = await _call(root, "find_files", pattern="*")
+    assert not is_error, text
+    assert "a.txt" in text.splitlines()

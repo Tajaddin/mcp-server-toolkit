@@ -19,7 +19,11 @@ class Sandbox:
         self.root = root.resolve()
 
     def contains(self, path: Path) -> bool:
-        return path.resolve().is_relative_to(self.root)
+        """True if ``path`` resolves inside the root; a symlink loop counts as outside."""
+        try:
+            return path.resolve().is_relative_to(self.root)
+        except (OSError, RuntimeError):  # RuntimeError: symlink loop on Python < 3.13
+            return False
 
     def resolve(self, rel_path: str) -> Path:
         """Return ``rel_path`` resolved under the root, or raise :class:`ToolError`."""
