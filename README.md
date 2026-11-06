@@ -100,7 +100,7 @@ Sandboxed read-only filesystem access — confined to a `--root` you supply at l
 
 ### `github-issues`
 
-Read-only public-repo issue search. Unauth GitHub allows 60 req/hr; set `GITHUB_TOKEN` to lift to 5000.
+Read-only public-repo issue search. Unauth GitHub allows 60 req/hr; set `GITHUB_TOKEN` to lift to 5000. `owner` and `repo` must be plain GitHub names (`[A-Za-z0-9_.-]`, not `.` or `..`), checked before any request, so a value like `..` cannot redirect a call to another endpoint under your token.
 
 | Tool | Args | What it returns |
 |---|---|---|
