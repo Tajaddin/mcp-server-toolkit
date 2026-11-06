@@ -84,12 +84,13 @@ Tool authors:
 * Return a plain `str` for success.
 * Raise `ToolError("...")` for user-visible failures (the SDK emits `isError: true`).
 * Let any other exception bubble — FastMCP turns it into a generic server error.
+* Take paths from the model through `Sandbox(root)`: `.resolve(rel_path)` raises `ToolError` for a path that lands outside `root`; `.rglob(pattern)` rejects absolute and `..` patterns and skips matches that resolve outside.
 
 ## Three example servers
 
 ### `filesystem-stats`
 
-Sandboxed read-only filesystem access — confined to a `--root` you supply at launch. Path-traversal attempts (`../../etc`) are rejected.
+Sandboxed read-only filesystem access — confined to a `--root` you supply at launch. All three tools go through one `Sandbox` helper. A path is checked after `..` segments and symlinks are resolved, and a `find_files` pattern that is absolute or contains `..` is rejected, so nothing outside the root is listed, summarized, or matched.
 
 | Tool | Args | What it returns |
 |---|---|---|
