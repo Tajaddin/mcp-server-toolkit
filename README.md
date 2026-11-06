@@ -2,7 +2,7 @@
 
 > Reusable framework for building **Model Context Protocol (MCP) servers** for Claude, plus three production-shaped example servers — filesystem-stats, github-issues, sqlite-query. In-memory test harness with **p99 tool round-trip = 8.2 ms** (target was 50 ms).
 
-[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Tests](https://img.shields.io/badge/tests-73%20passing-brightgreen)](#tests) [![Python](https://img.shields.io/badge/python-3.10%2B-blue)]()
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Tests](https://img.shields.io/badge/tests-76%20passing-brightgreen)](#tests) [![Python](https://img.shields.io/badge/python-3.10%2B-blue)]()
 
 ## What this is
 
@@ -90,11 +90,11 @@ Tool authors:
 
 ### `filesystem-stats`
 
-Sandboxed read-only filesystem access — confined to a `--root` you supply at launch. All three tools go through one `Sandbox` helper. A path is checked after `..` segments and symlinks are resolved, and a `find_files` pattern that is absolute or contains `..` is rejected, so nothing outside the root is listed, summarized, or matched.
+Sandboxed read-only filesystem access — confined to a `--root` you supply at launch. All three tools go through one `Sandbox` helper. A path is checked after `..` segments and symlinks are resolved, and a `find_files` pattern that is absolute or contains `..` is rejected, so nothing outside the root is listed, summarized, or matched. `list_directory` does not follow symlinks: a link is listed as type `link` with its own size and mtime, never its target's.
 
 | Tool | Args | What it returns |
 |---|---|---|
-| `list_directory` | `rel_path` | TSV: name, type, size_bytes, mtime |
+| `list_directory` | `rel_path` | TSV: name, type (`file`, `dir` or `link`), size_bytes, mtime |
 | `file_summary` | `rel_path` | size, suffix, line count (for ≤1MB text), mode bits |
 | `find_files` | `pattern`, `max_depth`, `limit` | matching relative paths under the root |
 
@@ -126,16 +126,16 @@ pytest -q
 ```
 
 ```
-73 passed
+76 passed
 ```
 
 Each server has an in-memory test suite that exercises:
 * tool listing (advertised tools match the registry)
 * happy-path tool calls
 * error paths (path escape, invalid table name, write statement, missing file)
-* adversarial inputs: `..`, absolute and symlinked paths for every filesystem tool, a runaway query, unsafe GitHub `owner`/`repo` values
+* adversarial inputs: `..`, absolute and symlinked paths for every filesystem tool, a symlink loop, a runaway query, unsafe GitHub `owner`/`repo` values
 
-The symlink cases skip on systems that do not allow creating symlinks (Windows without Developer Mode), leaving 68 passed, 5 skipped.
+The symlink cases skip on systems that do not allow creating symlinks (Windows without Developer Mode), leaving 68 passed, 8 skipped.
 
 ## Project layout
 
@@ -150,7 +150,7 @@ The symlink cases skip on systems that do not allow creating symlinks (Windows w
 │       ├── filesystem_stats.py
 │       ├── github_issues.py
 │       └── sqlite_query.py
-├── tests/                  # 73 pytest cases
+├── tests/                  # 76 pytest cases
 └── bench/
     ├── latency.py
     └── latency_results.json

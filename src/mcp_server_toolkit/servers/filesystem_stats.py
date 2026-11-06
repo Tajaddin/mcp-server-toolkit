@@ -25,8 +25,9 @@ def build_server(root: Path, max_entries: int = 200) -> ToolkitServer:
         name="list_directory",
         description=(
             "List entries of a directory under the sandbox root. Returns name, "
-            "type, size_bytes, and modified time for each entry. ``rel_path`` "
-            "is relative to the sandbox root."
+            "type (file, dir, or link), size_bytes, and modified time for each "
+            "entry. Symlinks are not followed. ``rel_path`` is relative to the "
+            "sandbox root."
         ),
     )
     def list_directory(rel_path: str = ".") -> str:
@@ -40,9 +41,14 @@ def build_server(root: Path, max_entries: int = 200) -> ToolkitServer:
             if i >= max_entries:
                 rows.append(f"... ({sum(1 for _ in target.iterdir()) - max_entries} more)")
                 break
-            st = entry.stat()
+            st = entry.lstat()
             mt = datetime.fromtimestamp(st.st_mtime, tz=timezone.utc).isoformat()
-            kind = "dir" if entry.is_dir() else "file"
+            if _stat.S_ISLNK(st.st_mode):
+                kind = "link"
+            elif _stat.S_ISDIR(st.st_mode):
+                kind = "dir"
+            else:
+                kind = "file"
             rows.append(f"{entry.name}\t{kind}\t{st.st_size}\t{mt}")
         return "\n".join(rows) if rows else "(empty)"
 

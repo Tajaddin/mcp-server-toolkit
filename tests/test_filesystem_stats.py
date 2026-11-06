@@ -151,3 +151,17 @@ async def test_find_files_skips_a_symlink_loop(jail) -> None:
     is_error, text = await _call(root, "find_files", pattern="*")
     assert not is_error, text
     assert "a.txt" in text.splitlines()
+
+
+@pytest.mark.parametrize("target", ["outside", "loop"])
+async def test_list_directory_reports_symlinks_without_following_them(jail, target: str) -> None:
+    root, outside = jail
+    secret = outside / "secret.txt"
+    secret.write_text("x" * 12345)
+    link = root / "link"
+    _link_or_skip(link, secret if target == "outside" else link)
+    is_error, text = await _call(root, "list_directory", rel_path=".")
+    assert not is_error, text
+    row = next(r for r in text.splitlines() if r.startswith("link\t")).split("\t")
+    assert row[1] == "link"
+    assert row[2] != "12345"
