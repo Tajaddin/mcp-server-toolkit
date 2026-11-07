@@ -60,3 +60,108 @@ async def test_find_files_glob(sandbox: Path) -> None:
         out = await call_tool(s, "find_files", pattern="*.py")
         text = out.content[0].text
         assert "b.py" in text
+
+
+@pytest.fixture
+def jail(tmp_path: Path) -> tuple[Path, Path]:
+    """A sandbox root next to a directory whose contents must never be reachable."""
+    root = tmp_path / "root"
+    (root / "sub").mkdir(parents=True)
+    (root / "a.txt").write_text("a\n")
+    (root / "sub" / "b.py").write_text("b = 1\n")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.txt").write_text("secret\n")
+    return root, outside
+
+
+async def _call(root: Path, tool: str, **arguments: object) -> tuple[bool, str]:
+    async with in_memory_session(build_server(root)) as s:
+        out = await call_tool(s, tool, **arguments)
+    return bool(out.isError), "\n".join(c.text for c in out.content)
+
+
+def _link_or_skip(link: Path, target: Path) -> None:
+    try:
+        link.symlink_to(target, target_is_directory=target.is_dir())
+    except OSError as exc:
+        pytest.skip(f"cannot create symlinks here: {exc}")
+
+
+@pytest.mark.parametrize("tool", ["list_directory", "file_summary"])
+@pytest.mark.parametrize(
+    "rel_path",
+    ["..", "../outside", "../outside/secret.txt", "sub/../../outside/secret.txt", "ABSOLUTE"],
+)
+async def test_path_tools_reject_escapes(jail, tool: str, rel_path: str) -> None:
+    root, outside = jail
+    if rel_path == "ABSOLUTE":
+        rel_path = str(outside / "secret.txt") if tool == "file_summary" else str(outside)
+    is_error, text = await _call(root, tool, rel_path=rel_path)
+    assert is_error
+    assert "escapes sandbox" in text
+
+
+@pytest.mark.parametrize(
+    "pattern",
+    ["../*", "../*/*", "../outside/*", "sub/../../outside/*", "**/../../outside/*", "ABSOLUTE"],
+)
+async def test_find_files_rejects_patterns_that_leave_the_root(jail, pattern: str) -> None:
+    root, outside = jail
+    if pattern == "ABSOLUTE":
+        pattern = str(outside / "*")
+    is_error, text = await _call(root, "find_files", pattern=pattern)
+    assert is_error
+    assert "secret.txt" not in text
+
+
+async def test_find_files_still_matches_inside_the_root(jail) -> None:
+    root, _ = jail
+    is_error, text = await _call(root, "find_files", pattern="sub/*.py")
+    assert not is_error
+    assert text == "sub/b.py"
+
+
+@pytest.mark.parametrize(
+    ("tool", "arguments"),
+    [
+        ("list_directory", {"rel_path": "link"}),
+        ("file_summary", {"rel_path": "link/secret.txt"}),
+    ],
+)
+async def test_path_tools_reject_symlinks_out_of_the_root(jail, tool, arguments) -> None:
+    root, outside = jail
+    _link_or_skip(root / "link", outside)
+    is_error, text = await _call(root, tool, **arguments)
+    assert is_error
+    assert "escapes sandbox" in text
+
+
+@pytest.mark.parametrize("pattern", ["link/*", "**/*", "*/*.txt"])
+async def test_find_files_skips_matches_behind_symlinks_out_of_the_root(jail, pattern: str) -> None:
+    root, outside = jail
+    _link_or_skip(root / "link", outside)
+    _, text = await _call(root, "find_files", pattern=pattern)
+    assert "secret.txt" not in text
+
+
+async def test_find_files_skips_a_symlink_loop(jail) -> None:
+    root, _ = jail
+    _link_or_skip(root / "loop", root / "loop")
+    is_error, text = await _call(root, "find_files", pattern="*")
+    assert not is_error, text
+    assert "a.txt" in text.splitlines()
+
+
+@pytest.mark.parametrize("target", ["outside", "loop"])
+async def test_list_directory_reports_symlinks_without_following_them(jail, target: str) -> None:
+    root, outside = jail
+    secret = outside / "secret.txt"
+    secret.write_text("x" * 12345)
+    link = root / "link"
+    _link_or_skip(link, secret if target == "outside" else link)
+    is_error, text = await _call(root, "list_directory", rel_path=".")
+    assert not is_error, text
+    row = next(r for r in text.splitlines() if r.startswith("link\t")).split("\t")
+    assert row[1] == "link"
+    assert row[2] != "12345"

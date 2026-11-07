@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from mcp_server_toolkit.base import ToolError, ToolkitServer, register_tool
+from mcp_server_toolkit.sandbox import Sandbox
 
 
 def build_server(root: Path, max_entries: int = 200) -> ToolkitServer:
@@ -16,25 +17,21 @@ def build_server(root: Path, max_entries: int = 200) -> ToolkitServer:
         name="filesystem-stats",
         description="Sandboxed read-only filesystem stats over a single root.",
     )
-    root = root.resolve()
-
-    def _resolve_in_sandbox(rel: str) -> Path:
-        path = (root / rel).resolve()
-        if root != path and root not in path.parents:
-            raise ToolError(f"path escapes sandbox: {rel!r}")
-        return path
+    sandbox = Sandbox(root)
+    root = sandbox.root
 
     @register_tool(
         server,
         name="list_directory",
         description=(
             "List entries of a directory under the sandbox root. Returns name, "
-            "type, size_bytes, and modified time for each entry. ``rel_path`` "
-            "is relative to the sandbox root."
+            "type (file, dir, or link), size_bytes, and modified time for each "
+            "entry. Symlinks are not followed. ``rel_path`` is relative to the "
+            "sandbox root."
         ),
     )
     def list_directory(rel_path: str = ".") -> str:
-        target = _resolve_in_sandbox(rel_path)
+        target = sandbox.resolve(rel_path)
         if not target.exists():
             raise ToolError(f"not found: {rel_path}")
         if not target.is_dir():
@@ -44,9 +41,14 @@ def build_server(root: Path, max_entries: int = 200) -> ToolkitServer:
             if i >= max_entries:
                 rows.append(f"... ({sum(1 for _ in target.iterdir()) - max_entries} more)")
                 break
-            st = entry.stat()
+            st = entry.lstat()
             mt = datetime.fromtimestamp(st.st_mtime, tz=timezone.utc).isoformat()
-            kind = "dir" if entry.is_dir() else "file"
+            if _stat.S_ISLNK(st.st_mode):
+                kind = "link"
+            elif _stat.S_ISDIR(st.st_mode):
+                kind = "dir"
+            else:
+                kind = "file"
             rows.append(f"{entry.name}\t{kind}\t{st.st_size}\t{mt}")
         return "\n".join(rows) if rows else "(empty)"
 
@@ -59,7 +61,7 @@ def build_server(root: Path, max_entries: int = 200) -> ToolkitServer:
         ),
     )
     def file_summary(rel_path: str) -> str:
-        target = _resolve_in_sandbox(rel_path)
+        target = sandbox.resolve(rel_path)
         if not target.exists():
             raise ToolError(f"not found: {rel_path}")
         if not target.is_file():
@@ -94,11 +96,7 @@ def build_server(root: Path, max_entries: int = 200) -> ToolkitServer:
             raise ToolError("limit must be in [1, 1000]")
         matches: list[str] = []
         root_parts = len(root.parts)
-        for path in root.rglob(pattern):
-            try:
-                path.relative_to(root)
-            except ValueError:
-                continue
+        for path in sandbox.rglob(pattern):
             if len(path.parts) - root_parts > max_depth:
                 continue
             matches.append(str(path.relative_to(root)).replace(os.sep, "/"))

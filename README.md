@@ -2,7 +2,7 @@
 
 > Reusable framework for building **Model Context Protocol (MCP) servers** for Claude, plus three production-shaped example servers — filesystem-stats, github-issues, sqlite-query. In-memory test harness with **p99 tool round-trip = 8.2 ms** (target was 50 ms).
 
-[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Tests](https://img.shields.io/badge/tests-12%20passing-brightgreen)](#tests) [![Python](https://img.shields.io/badge/python-3.10%2B-blue)]()
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Tests](https://img.shields.io/badge/tests-76%20passing-brightgreen)](#tests) [![Python](https://img.shields.io/badge/python-3.10%2B-blue)]()
 
 ## What this is
 
@@ -84,22 +84,23 @@ Tool authors:
 * Return a plain `str` for success.
 * Raise `ToolError("...")` for user-visible failures (the SDK emits `isError: true`).
 * Let any other exception bubble — FastMCP turns it into a generic server error.
+* Take paths from the model through `Sandbox(root)`: `.resolve(rel_path)` raises `ToolError` for a path that lands outside `root`; `.rglob(pattern)` rejects absolute and `..` patterns and skips matches that resolve outside.
 
 ## Three example servers
 
 ### `filesystem-stats`
 
-Sandboxed read-only filesystem access — confined to a `--root` you supply at launch. Path-traversal attempts (`../../etc`) are rejected.
+Sandboxed read-only filesystem access — confined to a `--root` you supply at launch. All three tools go through one `Sandbox` helper. A path is checked after `..` segments and symlinks are resolved, and a `find_files` pattern that is absolute or contains `..` is rejected, so nothing outside the root is listed, summarized, or matched. `list_directory` does not follow symlinks: a link is listed as type `link` with its own size and mtime, never its target's.
 
 | Tool | Args | What it returns |
 |---|---|---|
-| `list_directory` | `rel_path` | TSV: name, type, size_bytes, mtime |
+| `list_directory` | `rel_path` | TSV: name, type (`file`, `dir` or `link`), size_bytes, mtime |
 | `file_summary` | `rel_path` | size, suffix, line count (for ≤1MB text), mode bits |
 | `find_files` | `pattern`, `max_depth`, `limit` | matching relative paths under the root |
 
 ### `github-issues`
 
-Read-only public-repo issue search. Unauth GitHub allows 60 req/hr; set `GITHUB_TOKEN` to lift to 5000.
+Read-only public-repo issue search. Unauth GitHub allows 60 req/hr; set `GITHUB_TOKEN` to lift to 5000. `owner` and `repo` must be plain GitHub names (`[A-Za-z0-9_.-]`, not `.` or `..`), checked before any request, so a value like `..` cannot redirect a call to another endpoint under your token.
 
 | Tool | Args | What it returns |
 |---|---|---|
@@ -109,7 +110,7 @@ Read-only public-repo issue search. Unauth GitHub allows 60 req/hr; set `GITHUB_
 
 ### `sqlite-query`
 
-Strict read-only SQLite. Only `SELECT` / `WITH ... SELECT` accepted; statement chaining via `;` is rejected. Connection opens in `mode=ro` so even a regex bypass can't write.
+Strict read-only SQLite. Only `SELECT` / `WITH ... SELECT` accepted; statement chaining via `;` is rejected. Connection opens in `mode=ro` so even a regex bypass can't write. A query still running after 5 s (`query_timeout_s`) is interrupted through SQLite's progress handler, so a runaway recursive CTE cannot hang the server.
 
 | Tool | Args | What it returns |
 |---|---|---|
@@ -125,13 +126,16 @@ pytest -q
 ```
 
 ```
-12 passed
+76 passed
 ```
 
 Each server has an in-memory test suite that exercises:
 * tool listing (advertised tools match the registry)
 * happy-path tool calls
 * error paths (path escape, invalid table name, write statement, missing file)
+* adversarial inputs: `..`, absolute and symlinked paths for every filesystem tool, a symlink loop, a runaway query, unsafe GitHub `owner`/`repo` values
+
+The symlink cases skip on systems that do not allow creating symlinks (Windows without Developer Mode), leaving 68 passed, 8 skipped.
 
 ## Project layout
 
@@ -141,11 +145,12 @@ Each server has an in-memory test suite that exercises:
 │   ├── __init__.py
 │   ├── base.py             # ToolkitServer + ToolError + register_tool decorator
 │   ├── testing.py          # in_memory_session, list_tools, call_tool
+│   ├── sandbox.py          # Sandbox: path and glob confinement
 │   └── servers/
 │       ├── filesystem_stats.py
 │       ├── github_issues.py
 │       └── sqlite_query.py
-├── tests/                  # 12 pytest-asyncio cases
+├── tests/                  # 76 pytest cases
 └── bench/
     ├── latency.py
     └── latency_results.json

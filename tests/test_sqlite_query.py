@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import sqlite3
+import time
 from pathlib import Path
 
 import pytest
@@ -78,3 +80,24 @@ async def test_describe_rejects_invalid_name(db: Path) -> None:
     async with in_memory_session(server) as s:
         out = await call_tool(s, "describe_table", name="users; DROP")
         assert out.isError is True or "invalid" in (out.content[0].text or "").lower()
+
+
+async def test_query_stops_at_the_time_limit(db: Path) -> None:
+    server = build_server(db, query_timeout_s=0.5)
+    endless = "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c) SELECT count(*) FROM c"
+    start = time.monotonic()
+    async with in_memory_session(server) as s:
+        out = await call_tool(s, "query", sql=endless)
+    assert out.isError is True
+    assert "time limit" in out.content[0].text
+    assert time.monotonic() - start < 5
+
+
+async def test_query_time_limit_spares_normal_queries(db: Path) -> None:
+    server = build_server(db, query_timeout_s=0.5)
+    async with in_memory_session(server) as s:
+        first = await call_tool(s, "query", sql="SELECT name FROM users ORDER BY id")
+        await asyncio.sleep(0.6)
+        second = await call_tool(s, "query", sql="SELECT name FROM users ORDER BY id")
+    assert not first.isError and not second.isError
+    assert "alice" in second.content[0].text

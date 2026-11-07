@@ -1,13 +1,15 @@
 """MCP server: safe read-only SQLite queries.
 
 WARNING — demo-only. This server intentionally executes user-supplied SQL
-(read-only via _is_read_only) against the configured SQLite file. It is
-designed for showcase / sandbox SQLite databases (`examples/*.db`,
-`docs.db`, etc.). DO NOT point it at a database that contains production
-data, PII, or anything you would not be comfortable streaming back to an
-LLM in plain text. There is no row-level authorization, no PII redaction,
-no audit log of query bodies, and read-only protection is regex-based, not
-enforced by the SQLite engine.
+against the configured SQLite file. It is designed for showcase / sandbox
+SQLite databases (`examples/*.db`, `docs.db`, etc.). DO NOT point it at a
+database that contains production data, PII, or anything you would not be
+comfortable streaming back to an LLM in plain text. There is no row-level
+authorization, no PII redaction, and no audit log of query bodies.
+
+Writes are blocked twice: _is_read_only admits only a single SELECT/WITH
+statement, and the connection opens with mode=ro, so SQLite itself refuses
+to write. Each query is interrupted once it runs past ``query_timeout_s``.
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ from __future__ import annotations
 import argparse
 import re
 import sqlite3
+import time
 from pathlib import Path
 
 from mcp_server_toolkit.base import ToolError, ToolkitServer, register_tool
@@ -30,7 +33,7 @@ def _is_read_only(sql: str) -> bool:
     return ";" not in stripped
 
 
-def build_server(db_path: Path, row_limit: int = 100) -> ToolkitServer:
+def build_server(db_path: Path, row_limit: int = 100, query_timeout_s: float = 5.0) -> ToolkitServer:
     server = ToolkitServer(
         name="sqlite-query",
         description="Read-only SQLite query interface with row-limit + write-rejection.",
@@ -89,7 +92,8 @@ def build_server(db_path: Path, row_limit: int = 100) -> ToolkitServer:
         name="query",
         description=(
             "Run a read-only SQL query (SELECT or WITH ... SELECT). Returns up to "
-            f"``{row_limit}`` rows as TSV. Write statements are rejected."
+            f"``{row_limit}`` rows as TSV. Write statements are rejected. Queries "
+            f"running longer than {query_timeout_s:g} s are stopped."
         ),
     )
     def query(sql: str) -> str:
@@ -97,12 +101,17 @@ def build_server(db_path: Path, row_limit: int = 100) -> ToolkitServer:
             raise ToolError("rejected: only single SELECT/WITH statements are allowed")
         if not db_path.exists():
             raise ToolError(f"db file not found: {db_path}")
+        deadline = time.monotonic() + query_timeout_s
         try:
             with _connect() as conn:
+                # A truthy return from the handler makes SQLite abort the statement.
+                conn.set_progress_handler(lambda: time.monotonic() > deadline, 1000)
                 cur = conn.execute(sql)
                 rows = cur.fetchmany(row_limit)
                 cols = [d[0] for d in cur.description] if cur.description else []
         except sqlite3.Error as exc:
+            if time.monotonic() > deadline:
+                raise ToolError(f"query exceeded the {query_timeout_s:g} s time limit") from exc
             raise ToolError(f"sqlite error: {exc}") from exc
         if not rows:
             return f"({len(cols)} columns, 0 rows)"

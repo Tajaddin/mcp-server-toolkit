@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 from typing import Any
 
 import httpx
@@ -11,6 +12,19 @@ import httpx
 from mcp_server_toolkit.base import ToolError, ToolkitServer, register_tool
 
 GITHUB_API = "https://api.github.com"
+_NAME_RE = re.compile(r"[A-Za-z0-9_.-]+")
+
+
+def _repo_url(owner: str, repo: str) -> str:
+    """Build ``/repos/{owner}/{repo}``, refusing segments that could change the path.
+
+    httpx normalizes ``..`` in URL paths, so an unchecked owner of ``..`` would
+    reach other endpoints with the caller's ``GITHUB_TOKEN``.
+    """
+    for field, value in (("owner", owner), ("repo", repo)):
+        if not _NAME_RE.fullmatch(value) or value in (".", ".."):
+            raise ToolError(f"invalid {field}: {value!r}")
+    return f"{GITHUB_API}/repos/{owner}/{repo}"
 
 
 def _client() -> httpx.Client:
@@ -66,13 +80,14 @@ def build_server() -> ToolkitServer:
         description="Get one issue's title, state, body, and first 5 comments.",
     )
     def get_issue(owner: str, repo: str, number: int) -> str:
+        repo_url = _repo_url(owner, repo)
         with _client() as client:
-            r1 = client.get(f"{GITHUB_API}/repos/{owner}/{repo}/issues/{number}")
+            r1 = client.get(f"{repo_url}/issues/{number}")
             if r1.status_code != 200:
                 raise ToolError(f"GitHub returned {r1.status_code}: {r1.text[:200]}")
             issue = r1.json()
             r2 = client.get(
-                f"{GITHUB_API}/repos/{owner}/{repo}/issues/{number}/comments",
+                f"{repo_url}/issues/{number}/comments",
                 params={"per_page": 5},
             )
             comments = r2.json() if r2.status_code == 200 else []
@@ -95,9 +110,10 @@ def build_server() -> ToolkitServer:
     )
     def list_repo_issues(owner: str, repo: str, limit: int = 10) -> str:
         limit = max(1, min(limit, 50))
+        repo_url = _repo_url(owner, repo)
         with _client() as client:
             resp = client.get(
-                f"{GITHUB_API}/repos/{owner}/{repo}/issues",
+                f"{repo_url}/issues",
                 params={"state": "open", "per_page": limit, "sort": "created", "direction": "desc"},
             )
         if resp.status_code != 200:
